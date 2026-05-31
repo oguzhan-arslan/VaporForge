@@ -28,6 +28,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 opener = "0.7"
 image = { version = "0.25", features = ["jpeg"] }
+zip = "2"
+rfd = "0.15"
 
 [build-dependencies]
 winresource = "0.1"

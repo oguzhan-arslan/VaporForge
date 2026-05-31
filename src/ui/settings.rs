@@ -188,6 +188,18 @@ impl View for SettingsView {
                             }
                         }
                     }
+
+                    if ui
+                        .add_enabled(
+                            grid_path.is_some(),
+                            egui::Button::new("Export Grid as ZIP…"),
+                        )
+                        .clicked()
+                    {
+                        if let Some(ref dir) = grid_path {
+                            export_grid_zip(dir);
+                        }
+                    }
                 });
             });
 
@@ -424,4 +436,50 @@ impl SettingsView {
             }
         });
     }
+}
+
+fn export_grid_zip(grid_dir: &std::path::Path) {
+    let default_name = "grid_backup.zip";
+    let dest = rfd::FileDialog::new()
+        .set_title("Export Grid Directory as ZIP")
+        .set_file_name(default_name)
+        .add_filter("ZIP archive", &["zip"])
+        .save_file();
+
+    let Some(dest) = dest else { return };
+
+    match zip_directory(grid_dir, &dest) {
+        Ok(count) => tracing::info!("Exported {count} file(s) to {}", dest.display()),
+        Err(e) => tracing::error!("Grid export failed: {e}"),
+    }
+}
+
+fn zip_directory(src: &std::path::Path, dest: &std::path::Path) -> eyre::Result<usize> {
+    use std::io::Write;
+    use zip::write::FileOptions;
+
+    let file = std::fs::File::create(dest)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = FileOptions::<()>::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    let mut count = 0;
+    let entries = std::fs::read_dir(src)?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_owned(),
+            None => continue,
+        };
+        let bytes = std::fs::read(&path)?;
+        zip.start_file(&name, options)?;
+        zip.write_all(&bytes)?;
+        count += 1;
+    }
+
+    zip.finish()?;
+    Ok(count)
 }
