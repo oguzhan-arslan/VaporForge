@@ -108,8 +108,8 @@ pub struct ArtworkPickerView {
     fetching: bool,
     loaded_for: Option<(usize, ImageKind)>,
     current_page: usize,
+    fetching_page: usize,
     images_has_more: bool,
-    images_appending: bool,
 
     // thumbnail gallery
     gallery: Vec<GalleryEntry>,
@@ -157,8 +157,8 @@ impl ArtworkPickerView {
             fetching: false,
             loaded_for: None,
             current_page: 0,
+            fetching_page: 0,
             images_has_more: false,
-            images_appending: false,
             gallery: vec![],
             active_loads: 0,
             thumb_tx: None,
@@ -344,16 +344,12 @@ impl ArtworkPickerView {
         sgdb_id: usize,
         kind: ImageKind,
         opts: GetImagesOptions,
-        append: bool,
     ) {
         let (tx, rx) = mpsc::channel();
         self.images_rx = Some(rx);
         self.fetching = true;
-        self.images_appending = append;
-
-        if !append {
-            self.clear_gallery();
-        }
+        self.fetching_page = opts.page;
+        self.clear_gallery();
 
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             tracing::error!("Tokio runtime not available for image fetch.");
@@ -557,7 +553,6 @@ impl ArtworkPickerView {
                                 id,
                                 self.active_kind,
                                 opts,
-                                false,
                             );
                         } else {
                             tracing::warn!("No SteamGridDB matches found.");
@@ -574,9 +569,6 @@ impl ArtworkPickerView {
             if let Ok(result) = rx.try_recv() {
                 self.fetching = false;
                 self.images_rx = None;
-                let appending = self.images_appending;
-                self.images_appending = false;
-
                 match result {
                     Ok(images) => {
                         let page_size = config.steamgriddb.page_size as usize;
@@ -589,37 +581,19 @@ impl ArtworkPickerView {
                         let received = images.len();
                         self.images_has_more = received >= page_size;
 
-                        if appending {
-                            if self.thumb_tx.is_none() {
-                                let (tx, rx) = mpsc::channel();
-                                self.thumb_tx = Some(tx);
-                                self.thumb_rx = Some(rx);
-                            }
-                            for img in images {
-                                self.gallery.push(GalleryEntry {
-                                    meta: img,
-                                    attempts: 0,
-                                    thumb: ThumbState::Pending,
-                                });
-                            }
-                            if received > 0 {
-                                self.current_page += 1;
-                            }
-                        } else {
-                            let (tx, rx) = mpsc::channel();
-                            self.thumb_tx = Some(tx);
-                            self.thumb_rx = Some(rx);
-                            self.gallery = images
-                                .into_iter()
-                                .map(|meta| GalleryEntry {
-                                    meta,
-                                    attempts: 0,
-                                    thumb: ThumbState::Pending,
-                                })
-                                .collect();
-                            self.current_page = 0;
-                            self.loaded_for = Some((self.selected_sgdb_idx, self.active_kind));
-                        }
+                        let (tx, rx) = mpsc::channel();
+                        self.thumb_tx = Some(tx);
+                        self.thumb_rx = Some(rx);
+                        self.gallery = images
+                            .into_iter()
+                            .map(|meta| GalleryEntry {
+                                meta,
+                                attempts: 0,
+                                thumb: ThumbState::Pending,
+                            })
+                            .collect();
+                        self.current_page = self.fetching_page;
+                        self.loaded_for = Some((self.selected_sgdb_idx, self.active_kind));
                     }
                     Err(e) => {
                         tracing::error!("Image fetch failed: {e}");
@@ -672,7 +646,6 @@ impl ArtworkPickerView {
                                 sgdb_id,
                                 self.active_kind,
                                 opts,
-                                false,
                             );
                         }
                     }
@@ -933,7 +906,8 @@ impl ArtworkPickerView {
 
     fn show_right_panel(&mut self, ui: &mut Ui, config: &mut AppConfig) {
         let mut kind_changed: Option<ImageKind> = None;
-        let mut load_more = false;
+        let mut load_prev = false;
+        let mut load_next = false;
         let mut clicked_url: Option<String> = None;
 
         // ── Bottom: pagination bar ────────────────────────────────────────
@@ -948,37 +922,68 @@ impl ArtworkPickerView {
             .show_separator_line(false)
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if !self.gallery.is_empty() {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} image(s) · page {}",
-                                self.gallery.len(),
-                                self.current_page + 1,
-                            ))
-                            .size(12.0)
-                            .color(theme::TEXT_DIM),
-                        );
+                    // Size slider — left side
+                    ui.label(
+                        egui::RichText::new("Size")
+                            .color(theme::TEXT_DIM)
+                            .size(12.0),
+                    );
+                    let scale = match self.active_kind {
+                        ImageKind::Cover => &mut config.steamgriddb.thumb_scales.cover,
+                        ImageKind::WideCover => &mut config.steamgriddb.thumb_scales.wide_cover,
+                        ImageKind::Background => &mut config.steamgriddb.thumb_scales.background,
+                        ImageKind::Logo => &mut config.steamgriddb.thumb_scales.logo,
+                        ImageKind::Icon => &mut config.steamgriddb.thumb_scales.icon,
+                    };
+                    let slider_resp = ui.add(
+                        egui::Slider::new(scale, 0.5..=3.0)
+                            .show_value(false),
+                    );
+                    if slider_resp.drag_stopped() {
+                        let _ = crate::config::save(config);
                     }
 
-                    // Load More / spinner — right aligned
+                    // Pagination — right aligned
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.fetching && self.images_appending {
+                        if self.fetching {
                             ui.spinner();
                             ui.label(
-                                egui::RichText::new("Loading more…")
+                                egui::RichText::new("Loading…")
                                     .color(theme::TEXT_2)
                                     .size(12.0),
                             );
-                        } else if self.images_has_more {
-                            let btn = egui::Button::new(
-                                egui::RichText::new("Load More")
-                                    .color(theme::TEXT)
-                                    .size(12.5),
+                        } else if !self.gallery.is_empty() {
+                            // Next
+                            let next_btn = egui::Button::new(
+                                egui::RichText::new("Next →").size(12.5).color(theme::TEXT),
                             )
                             .fill(theme::SURFACE_2)
                             .stroke(Stroke::new(1.0, theme::BORDER_STRONG));
-                            if ui.add(btn).clicked() {
-                                load_more = true;
+                            if ui
+                                .add_enabled(self.images_has_more, next_btn)
+                                .clicked()
+                            {
+                                load_next = true;
+                            }
+
+                            // Page indicator
+                            ui.label(
+                                egui::RichText::new(format!("Page {}", self.current_page + 1))
+                                    .size(12.0)
+                                    .color(theme::TEXT_DIM),
+                            );
+
+                            // Prev
+                            let prev_btn = egui::Button::new(
+                                egui::RichText::new("← Prev").size(12.5).color(theme::TEXT),
+                            )
+                            .fill(theme::SURFACE_2)
+                            .stroke(Stroke::new(1.0, theme::BORDER_STRONG));
+                            if ui
+                                .add_enabled(self.current_page > 0, prev_btn)
+                                .clicked()
+                            {
+                                load_prev = true;
                             }
                         }
                     });
@@ -1070,7 +1075,6 @@ impl ArtworkPickerView {
                                     id,
                                     self.active_kind,
                                     opts,
-                                    false,
                                 );
                             }
                         }
@@ -1078,24 +1082,6 @@ impl ArtworkPickerView {
                         ui.add_space(4.0);
                         ui.add(egui::Separator::default().vertical().spacing(0.0));
                         ui.add_space(4.0);
-                    }
-
-                    // Size slider — reads/writes config per active kind
-                    ui.label(
-                        egui::RichText::new("Size")
-                            .color(theme::TEXT_DIM)
-                            .size(12.0),
-                    );
-                    let scale = match self.active_kind {
-                        ImageKind::Cover => &mut config.steamgriddb.thumb_scales.cover,
-                        ImageKind::WideCover => &mut config.steamgriddb.thumb_scales.wide_cover,
-                        ImageKind::Background => &mut config.steamgriddb.thumb_scales.background,
-                        ImageKind::Logo => &mut config.steamgriddb.thumb_scales.logo,
-                        ImageKind::Icon => &mut config.steamgriddb.thumb_scales.icon,
-                    };
-                    let slider_resp = ui.add(egui::Slider::new(scale, 0.5..=3.0).show_value(false));
-                    if slider_resp.drag_stopped() {
-                        let _ = crate::config::save(config);
                     }
 
                     // Right-aligned status indicators
@@ -1141,7 +1127,7 @@ impl ArtworkPickerView {
             if let (true, Some(id)) = (needs_fetch, sgdb_id) {
                 if !config.steamgriddb.api_key.is_empty() {
                     let opts = Self::make_opts(config, 0);
-                    self.trigger_image_fetch(config.steamgriddb.api_key.clone(), id, kind, opts, false);
+                    self.trigger_image_fetch(config.steamgriddb.api_key.clone(), id, kind, opts);
                 }
             }
         }
@@ -1153,8 +1139,15 @@ impl ArtworkPickerView {
                 self.show_gallery_area(ui, config, &mut clicked_url);
             });
 
-        // Handle load more
-        if load_more {
+        // Handle prev/next page navigation
+        let nav_page: Option<usize> = if load_next {
+            Some(self.current_page + 1)
+        } else if load_prev {
+            Some(self.current_page.saturating_sub(1))
+        } else {
+            None
+        };
+        if let Some(page) = nav_page {
             let sgdb_id = if self.is_fetch_selection {
                 self.resolved_sgdb_id
             } else if !self.search_results.is_empty() {
@@ -1163,15 +1156,8 @@ impl ArtworkPickerView {
                 None
             };
             if let Some(id) = sgdb_id {
-                let next_page = self.current_page + 1;
-                let opts = Self::make_opts(config, next_page);
-                self.trigger_image_fetch(
-                    config.steamgriddb.api_key.clone(),
-                    id,
-                    self.active_kind,
-                    opts,
-                    true,
-                );
+                let opts = Self::make_opts(config, page);
+                self.trigger_image_fetch(config.steamgriddb.api_key.clone(), id, self.active_kind, opts);
             }
         }
 
@@ -1209,7 +1195,7 @@ impl ArtworkPickerView {
             });
             return;
         }
-        if self.fetching && !self.images_appending {
+        if self.fetching {
             ui.centered_and_justified(|ui| {
                 ui.horizontal(|ui| {
                     ui.spinner();
