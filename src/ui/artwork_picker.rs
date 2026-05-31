@@ -233,10 +233,20 @@ impl ArtworkPickerView {
     // ── options builder ───────────────────────────────────────────────────
 
     fn selected_game_name(&self) -> String {
-        let Some(idx) = self.selected_game else { return String::new() };
+        let Some(idx) = self.selected_game else {
+            return String::new();
+        };
         match self.active_tab {
-            LibraryTab::NonSteam => self.shortcuts.get(idx).map(|s| s.app_name.clone()).unwrap_or_default(),
-            LibraryTab::SteamLibrary => self.steam_games.get(idx).map(|g| g.name.clone()).unwrap_or_default(),
+            LibraryTab::NonSteam => self
+                .shortcuts
+                .get(idx)
+                .map(|s| s.app_name.clone())
+                .unwrap_or_default(),
+            LibraryTab::SteamLibrary => self
+                .steam_games
+                .get(idx)
+                .map(|g| g.name.clone())
+                .unwrap_or_default(),
         }
     }
 
@@ -402,12 +412,16 @@ impl ArtworkPickerView {
                         .bytes()
                         .await
                         .map_err(eyre::Report::from)?;
-                    let img = image::load_from_memory(&bytes)
-                        .map_err(|e| eyre::eyre!("decode: {e}"))?;
+                    let img =
+                        image::load_from_memory(&bytes).map_err(|e| eyre::eyre!("decode: {e}"))?;
                     let rgba8 = img.to_rgba8();
                     let width = rgba8.width() as usize;
                     let height = rgba8.height() as usize;
-                    Ok(DecodedThumb { width, height, rgba: rgba8.into_raw() })
+                    Ok(DecodedThumb {
+                        width,
+                        height,
+                        rgba: rgba8.into_raw(),
+                    })
                 }
                 .await;
                 let _ = tx.send((idx, result));
@@ -500,7 +514,6 @@ impl ArtworkPickerView {
                                 .collect();
                             self.current_page = 0;
                             self.loaded_for = Some((self.selected_sgdb_idx, self.active_kind));
-                            tracing::info!("{received} image(s) found.");
                         }
                     }
                     Err(e) => {
