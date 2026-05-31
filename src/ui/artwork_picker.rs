@@ -424,7 +424,11 @@ impl ArtworkPickerView {
             let result: eyre::Result<Vec<SteamSearchResult>> = async {
                 let resp = reqwest::Client::new()
                     .get("https://store.steampowered.com/api/storesearch/")
-                    .query(&[("term", &query), ("l", &"english".to_string()), ("cc", &"US".to_string())])
+                    .query(&[
+                        ("term", &query),
+                        ("l", &"english".to_string()),
+                        ("cc", &"US".to_string()),
+                    ])
                     .send()
                     .await?
                     .json::<serde_json::Value>()
@@ -446,7 +450,9 @@ impl ArtworkPickerView {
     }
 
     fn check_fetch_debounce(&mut self, _config: &AppConfig) {
-        let Some(since) = self.fetch_pending_since else { return };
+        let Some(since) = self.fetch_pending_since else {
+            return;
+        };
         if since.elapsed() >= Duration::from_millis(500) {
             self.fetch_pending_since = None;
             self.trigger_fetch_search();
@@ -715,13 +721,13 @@ impl ArtworkPickerView {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("✓  Artwork applied")
+                        egui::RichText::new("Artwork applied")
                             .color(theme::SUCCESS)
                             .size(13.0)
                             .strong(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("✕").clicked() {
+                        if ui.small_button("X").clicked() {
                             dismiss = true;
                         }
                         ui.label(
@@ -781,15 +787,26 @@ impl ArtworkPickerView {
         let filtered = if filter_lc.is_empty() {
             total
         } else {
-            self.shortcuts.iter().filter(|s| s.app_name.to_lowercase().contains(&filter_lc)).count()
-                + self.steam_games.iter().filter(|g| g.name.to_lowercase().contains(&filter_lc)).count()
+            self.shortcuts
+                .iter()
+                .filter(|s| s.app_name.to_lowercase().contains(&filter_lc))
+                .count()
+                + self
+                    .steam_games
+                    .iter()
+                    .filter(|g| g.name.to_lowercase().contains(&filter_lc))
+                    .count()
         };
         let count_label = if filter_lc.is_empty() {
             format!("Found Games ({})", total)
         } else {
             format!("Found Games ({} of {})", filtered, total)
         };
-        ui.label(egui::RichText::new(count_label).size(13.0).color(theme::TEXT_2));
+        ui.label(
+            egui::RichText::new(count_label)
+                .size(13.0)
+                .color(theme::TEXT_2),
+        );
         ui.add_space(6.0);
 
         if let Some(err) = &self.load_error {
@@ -800,7 +817,7 @@ impl ArtworkPickerView {
         let search_changed = ui
             .add(
                 egui::TextEdit::singleline(&mut self.search_query)
-                    .hint_text("Search games…")
+                    .hint_text("Search games...")
                     .desired_width(f32::INFINITY),
             )
             .changed();
@@ -844,8 +861,7 @@ impl ArtworkPickerView {
                     );
                 } else {
                     for (app_id, name) in &all_games {
-                        let sel =
-                            self.selected_app_id == Some(*app_id) && !self.is_fetch_selection;
+                        let sel = self.selected_app_id == Some(*app_id) && !self.is_fetch_selection;
                         if ui.selectable_label(sel, *name).clicked() && !sel {
                             local_clicked = Some((*app_id, name.to_string()));
                         }
@@ -868,7 +884,7 @@ impl ArtworkPickerView {
                         ui.horizontal(|ui| {
                             ui.spinner();
                             ui.label(
-                                egui::RichText::new("Searching…")
+                                egui::RichText::new("Searching...")
                                     .color(theme::TEXT_DIM)
                                     .size(11.5),
                             );
@@ -937,10 +953,7 @@ impl ArtworkPickerView {
                         ImageKind::Logo => &mut config.steamgriddb.thumb_scales.logo,
                         ImageKind::Icon => &mut config.steamgriddb.thumb_scales.icon,
                     };
-                    let slider_resp = ui.add(
-                        egui::Slider::new(scale, 0.5..=3.0)
-                            .show_value(false),
-                    );
+                    let slider_resp = ui.add(egui::Slider::new(scale, 0.5..=3.0).show_value(false));
                     if slider_resp.drag_stopped() {
                         let _ = crate::config::save(config);
                     }
@@ -950,21 +963,18 @@ impl ArtworkPickerView {
                         if self.fetching {
                             ui.spinner();
                             ui.label(
-                                egui::RichText::new("Loading…")
+                                egui::RichText::new("Loading...")
                                     .color(theme::TEXT_2)
                                     .size(12.0),
                             );
                         } else if !self.gallery.is_empty() {
                             // Next
                             let next_btn = egui::Button::new(
-                                egui::RichText::new("Next →").size(12.5).color(theme::TEXT),
+                                egui::RichText::new("Next").size(12.5).color(theme::TEXT),
                             )
                             .fill(theme::SURFACE_2)
                             .stroke(Stroke::new(1.0, theme::BORDER_STRONG));
-                            if ui
-                                .add_enabled(self.images_has_more, next_btn)
-                                .clicked()
-                            {
+                            if ui.add_enabled(self.images_has_more, next_btn).clicked() {
                                 load_next = true;
                             }
 
@@ -977,14 +987,11 @@ impl ArtworkPickerView {
 
                             // Prev
                             let prev_btn = egui::Button::new(
-                                egui::RichText::new("← Prev").size(12.5).color(theme::TEXT),
+                                egui::RichText::new("Prev").size(12.5).color(theme::TEXT),
                             )
                             .fill(theme::SURFACE_2)
                             .stroke(Stroke::new(1.0, theme::BORDER_STRONG));
-                            if ui
-                                .add_enabled(self.current_page > 0, prev_btn)
-                                .clicked()
-                            {
+                            if ui.add_enabled(self.current_page > 0, prev_btn).clicked() {
                                 load_prev = true;
                             }
                         }
@@ -1090,14 +1097,14 @@ impl ArtworkPickerView {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.applying {
                             ui.label(
-                                egui::RichText::new("Applying…")
+                                egui::RichText::new("Applying...")
                                     .color(theme::TEXT_2)
                                     .size(12.0),
                             );
                             ui.spinner();
                         } else if self.resolving_sgdb_id {
                             ui.label(
-                                egui::RichText::new("Finding artwork source…")
+                                egui::RichText::new("Finding artwork source...")
                                     .color(theme::TEXT_DIM)
                                     .size(12.0),
                             );
@@ -1119,21 +1126,34 @@ impl ArtworkPickerView {
                             ui.add_space(4.0);
 
                             let reset_all_btn = egui::Button::new(
-                                egui::RichText::new("Reset All").size(12.0).color(egui::Color32::from_rgb(220, 80, 80)),
+                                egui::RichText::new("Reset All")
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(220, 80, 80)),
                             )
                             .fill(theme::SURFACE_2)
                             .stroke(Stroke::new(1.0, theme::BORDER));
-                            if ui.add(reset_all_btn).on_hover_text("Delete all artwork for this game").clicked() {
+                            if ui
+                                .add(reset_all_btn)
+                                .on_hover_text("Delete all artwork for this game")
+                                .clicked()
+                            {
                                 reset_all = true;
                             }
 
-                            let reset_kind_label = format!("Reset {}", kind_label(self.active_kind));
+                            let reset_kind_label =
+                                format!("Reset {}", kind_label(self.active_kind));
                             let reset_kind_btn = egui::Button::new(
-                                egui::RichText::new(reset_kind_label).size(12.0).color(egui::Color32::from_rgb(220, 80, 80)),
+                                egui::RichText::new(reset_kind_label)
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(220, 80, 80)),
                             )
                             .fill(theme::SURFACE_2)
                             .stroke(Stroke::new(1.0, theme::BORDER));
-                            if ui.add(reset_kind_btn).on_hover_text("Delete this artwork type for this game").clicked() {
+                            if ui
+                                .add(reset_kind_btn)
+                                .on_hover_text("Delete this artwork type for this game")
+                                .clicked()
+                            {
                                 reset_kind = true;
                             }
                         }
@@ -1151,7 +1171,10 @@ impl ArtworkPickerView {
             } else {
                 None
             };
-            let needs_fetch = self.loaded_for.map(|(_, k)| k != kind).unwrap_or(sgdb_id.is_some());
+            let needs_fetch = self
+                .loaded_for
+                .map(|(_, k)| k != kind)
+                .unwrap_or(sgdb_id.is_some());
             if let (true, Some(id)) = (needs_fetch, sgdb_id) {
                 if !config.steamgriddb.api_key.is_empty() {
                     let opts = Self::make_opts(config, 0);
@@ -1171,7 +1194,11 @@ impl ArtworkPickerView {
         if reset_kind || reset_all {
             let appid = self.selected_app_id();
             let gdir = find_steam_dir().and_then(|steam_dir| {
-                let uid = config.steam.user_id.parse::<u64>().ok()
+                let uid = config
+                    .steam
+                    .user_id
+                    .parse::<u64>()
+                    .ok()
                     .or_else(|| find_user_ids(&steam_dir).into_iter().next())?;
                 Some(grid_dir(&steam_dir, uid))
             });
@@ -1187,7 +1214,10 @@ impl ArtworkPickerView {
                 } else {
                     let removed = delete_artwork(appid, self.active_kind, gdir);
                     if removed {
-                        tracing::info!("{} artwork reset for appid {appid}.", kind_label(self.active_kind));
+                        tracing::info!(
+                            "{} artwork reset for appid {appid}.",
+                            kind_label(self.active_kind)
+                        );
                         self.toast = Some(ToastNotification {
                             message: format!("{} artwork deleted.", kind_label(self.active_kind)),
                             file_path: None,
@@ -1216,7 +1246,12 @@ impl ArtworkPickerView {
             };
             if let Some(id) = sgdb_id {
                 let opts = Self::make_opts(config, page);
-                self.trigger_image_fetch(config.steamgriddb.api_key.clone(), id, self.active_kind, opts);
+                self.trigger_image_fetch(
+                    config.steamgriddb.api_key.clone(),
+                    id,
+                    self.active_kind,
+                    opts,
+                );
             }
         }
 
@@ -1225,7 +1260,11 @@ impl ArtworkPickerView {
             let appid = self.selected_app_id();
             let kind = self.active_kind;
             let gdir = find_steam_dir().and_then(|steam_dir| {
-                let uid = config.steam.user_id.parse::<u64>().ok()
+                let uid = config
+                    .steam
+                    .user_id
+                    .parse::<u64>()
+                    .ok()
                     .or_else(|| find_user_ids(&steam_dir).into_iter().next())?;
                 Some(grid_dir(&steam_dir, uid))
             });
@@ -1246,7 +1285,7 @@ impl ArtworkPickerView {
                 ui.horizontal(|ui| {
                     ui.spinner();
                     ui.label(
-                        egui::RichText::new("Searching SteamGridDB…")
+                        egui::RichText::new("Searching SteamGridDB...")
                             .color(theme::TEXT_2)
                             .size(13.0),
                     );
@@ -1259,7 +1298,7 @@ impl ArtworkPickerView {
                 ui.horizontal(|ui| {
                     ui.spinner();
                     ui.label(
-                        egui::RichText::new("Loading images…")
+                        egui::RichText::new("Loading images...")
                             .color(theme::TEXT_2)
                             .size(13.0),
                     );
@@ -1271,7 +1310,7 @@ impl ArtworkPickerView {
         if !has_selection {
             ui.centered_and_justified(|ui| {
                 ui.label(
-                    egui::RichText::new("← Select a game to browse artwork.")
+                    egui::RichText::new("Select a game to browse artwork.")
                         .color(theme::TEXT_DIM)
                         .size(14.0),
                 );
@@ -1306,7 +1345,7 @@ impl ArtworkPickerView {
                 };
                 let is_loading = matches!(e.thumb, ThumbState::Pending | ThumbState::Loading);
                 let full_url = e.meta.url.clone();
-                let hover = format!("{}×{}  {:?}", e.meta.width, e.meta.height, e.meta.mime);
+                let hover = format!("{}x{}  {:?}", e.meta.width, e.meta.height, e.meta.mime);
                 (is_loading, handle, full_url, hover)
             })
             .collect();
@@ -1370,7 +1409,7 @@ impl ArtworkPickerView {
                                     ui.put(
                                         tile_rect,
                                         egui::Label::new(
-                                            egui::RichText::new("⚠").color(theme::ERROR),
+                                            egui::RichText::new("!").color(theme::ERROR),
                                         ),
                                     );
                                 }

@@ -192,7 +192,7 @@ impl View for SettingsView {
                     if ui
                         .add_enabled(
                             grid_path.is_some(),
-                            egui::Button::new("Export Grid as ZIP…"),
+                            egui::Button::new("Export Grid as ZIP..."),
                         )
                         .clicked()
                     {

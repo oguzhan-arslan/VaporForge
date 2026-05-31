@@ -405,7 +405,7 @@ impl NonSteamManagerView {
         if self.scanning {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new("Scanning…").color(theme::TEXT_DIM).size(13.0));
+                ui.label(RichText::new("Scanning...").color(theme::TEXT_DIM).size(13.0));
             });
         } else {
             if ui.button("Scan for Games").clicked() {
@@ -417,7 +417,7 @@ impl NonSteamManagerView {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new("Applying artwork…").color(theme::TEXT_DIM).size(13.0));
+                ui.label(RichText::new("Applying artwork...").color(theme::TEXT_DIM).size(13.0));
             });
         }
 
@@ -469,7 +469,7 @@ impl NonSteamManagerView {
                         ui.add_space(8.0);
                         ui.spinner();
                         ui.label(
-                            RichText::new("Applying artwork…")
+                            RichText::new("Applying artwork...")
                                 .color(theme::TEXT_DIM)
                                 .size(13.0),
                         );
@@ -487,7 +487,7 @@ impl NonSteamManagerView {
                             ui.spinner();
                             ui.add_space(8.0);
                             ui.label(
-                                RichText::new("Scanning for new games…")
+                                RichText::new("Scanning for new games...")
                                     .color(theme::TEXT_DIM)
                                     .size(14.0),
                             );
@@ -683,7 +683,7 @@ impl NonSteamManagerView {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                let save_label = if self.edit_dirty { "Save Changes  •" } else { "Save Changes" };
+                let save_label = if self.edit_dirty { "Save Changes *" } else { "Save Changes" };
                 let save_btn = egui::Button::new(
                     RichText::new(save_label).color(egui::Color32::WHITE),
                 )

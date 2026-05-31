@@ -175,7 +175,7 @@ fn nav_tab(ui: &mut Ui, label: &str, is_active: bool) -> bool {
 fn api_key_banner(ui: &mut Ui, active: &mut usize, visible: &mut bool, view_count: usize) {
     ui.horizontal(|ui| {
         ui.label(
-            egui::RichText::new("⚠  No SteamGridDB API key set — artwork features are disabled.")
+            egui::RichText::new("! No SteamGridDB API key set - artwork features are disabled.")
                 .color(Color32::from_rgb(255, 195, 70))
                 .size(13.0),
         );
