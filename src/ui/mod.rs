@@ -194,11 +194,16 @@ fn api_key_banner(ui: &mut Ui, active: &mut usize, visible: &mut bool, view_coun
 // ── eframe bootstrap ──────────────────────────────────────────────────────
 
 pub fn run(app_log: AppLog, config: AppConfig) -> eyre::Result<()> {
+    let icon = load_icon();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("VaporForge")
+        .with_inner_size([1920.0, 1080.0])
+        .with_min_inner_size([900.0, 560.0]);
+    if let Some(icon) = icon {
+        viewport = viewport.with_icon(std::sync::Arc::new(icon));
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("VaporForge")
-            .with_inner_size([1920.0, 1080.0])
-            .with_min_inner_size([900.0, 560.0]),
+        viewport,
         ..Default::default()
     };
 
@@ -208,4 +213,11 @@ pub fn run(app_log: AppLog, config: AppConfig) -> eyre::Result<()> {
         Box::new(|cc| Ok(Box::new(VaporForgeApp::new(&cc.egui_ctx, config, app_log)))),
     )
     .map_err(|e| eyre::eyre!("{e}"))
+}
+
+fn load_icon() -> Option<egui::IconData> {
+    let bytes = include_bytes!("../../icon.png");
+    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    Some(egui::IconData { rgba: img.into_raw(), width: w, height: h })
 }
