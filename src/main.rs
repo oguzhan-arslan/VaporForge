@@ -9,9 +9,11 @@ mod ui;
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
 
-    let config = config::load()?;
+    let mut config = config::load()?;
     let app_log = ui::log::AppLog::new();
     init_logging(app_log.clone());
+
+    validate_steam_user(&mut config);
 
     // Multi-threaded tokio runtime for async HTTP/API operations.
     // The GUI stays on the main thread.
@@ -23,6 +25,24 @@ fn main() -> eyre::Result<()> {
     ui::run(app_log, config)?;
 
     Ok(())
+}
+
+fn validate_steam_user(config: &mut config::AppConfig) {
+    if config.steam.user_id.is_empty() {
+        return;
+    }
+    let valid = steam::paths::find_steam_dir()
+        .zip(config.steam.user_id.parse::<u64>().ok())
+        .map(|(dir, uid)| steam::paths::user_dir_exists(&dir, uid))
+        .unwrap_or(false);
+    if !valid {
+        tracing::warn!(
+            "Configured Steam user ID '{}' not found on disk; clearing override.",
+            config.steam.user_id
+        );
+        config.steam.user_id.clear();
+        let _ = config::save(config);
+    }
 }
 
 fn init_logging(app_log: ui::log::AppLog) {

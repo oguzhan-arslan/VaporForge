@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use egui::{Margin, ScrollArea, Ui};
 
 use crate::config::AppConfig;
@@ -8,6 +10,8 @@ pub struct SettingsView {
     initialized: bool,
 
     steam_user_id: String,
+    detected_users: Vec<u64>,
+    steam_dir: Option<PathBuf>,
     scan_dirs: Vec<String>,
     blocklist: Vec<String>,
     api_key: String,
@@ -26,6 +30,8 @@ impl SettingsView {
         Self {
             initialized: false,
             steam_user_id: String::new(),
+            detected_users: vec![],
+            steam_dir: None,
             scan_dirs: vec![],
             blocklist: vec![],
             api_key: String::new(),
@@ -49,6 +55,14 @@ impl SettingsView {
         self.show_nsfw = config.steamgriddb.show_nsfw;
         self.show_humor = config.steamgriddb.show_humor;
         self.show_epilepsy = config.steamgriddb.show_epilepsy;
+
+        if let Some(dir) = crate::steam::paths::find_steam_dir() {
+            self.detected_users = crate::steam::paths::find_user_ids(&dir);
+            self.steam_dir = Some(dir);
+        } else {
+            self.detected_users = vec![];
+            self.steam_dir = None;
+        }
     }
 
     fn apply_to(&self, config: &mut AppConfig) {
@@ -61,6 +75,14 @@ impl SettingsView {
         config.steamgriddb.show_nsfw = self.show_nsfw;
         config.steamgriddb.show_humor = self.show_humor;
         config.steamgriddb.show_epilepsy = self.show_epilepsy;
+    }
+
+    fn active_user_id(&self) -> Option<u64> {
+        if self.steam_user_id.is_empty() {
+            self.detected_users.first().copied()
+        } else {
+            self.steam_user_id.parse().ok()
+        }
     }
 }
 
@@ -144,6 +166,26 @@ impl View for SettingsView {
                                 }
                             }
                             Err(e) => tracing::error!("Cannot get config path: {e}"),
+                        }
+                    }
+
+                    let grid_path = self
+                        .steam_dir
+                        .as_ref()
+                        .zip(self.active_user_id())
+                        .map(|(dir, uid)| crate::steam::paths::grid_dir(dir, uid));
+                    if ui
+                        .add_enabled(
+                            grid_path.is_some(),
+                            egui::Button::new("Open Grid Directory"),
+                        )
+                        .clicked()
+                    {
+                        if let Some(ref dir) = grid_path {
+                            let _ = std::fs::create_dir_all(dir);
+                            if let Err(e) = opener::open(dir) {
+                                tracing::error!("Cannot open grid directory: {e}");
+                            }
                         }
                     }
                 });
@@ -249,18 +291,46 @@ impl SettingsView {
             theme::section_header(ui, "Steam");
 
             ui.label(
-                egui::RichText::new("User ID override")
+                egui::RichText::new("Steam Account")
                     .size(12.0)
                     .color(theme::TEXT_2),
             );
-            ui.add(
-                egui::TextEdit::singleline(&mut self.steam_user_id).desired_width(f32::INFINITY),
-            );
-            ui.label(
-                egui::RichText::new("Leave blank to auto-detect the first account found.")
+
+            let selected_label = if self.steam_user_id.is_empty() {
+                "Auto-detect".to_string()
+            } else {
+                self.steam_user_id.clone()
+            };
+            let combo_width = ui.available_width();
+            egui::ComboBox::from_id_salt("steam_user_combo")
+                .width(combo_width)
+                .selected_text(selected_label)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.steam_user_id, String::new(), "Auto-detect");
+                    for &uid in &self.detected_users {
+                        ui.selectable_value(
+                            &mut self.steam_user_id,
+                            uid.to_string(),
+                            uid.to_string(),
+                        );
+                    }
+                });
+
+            if self.detected_users.is_empty() {
+                ui.label(
+                    egui::RichText::new("No local Steam accounts detected.")
+                        .small()
+                        .color(theme::TEXT_DIM),
+                );
+            } else {
+                ui.label(
+                    egui::RichText::new(
+                        "Select an account, or Auto-detect to use the first one found.",
+                    )
                     .small()
                     .color(theme::TEXT_DIM),
-            );
+                );
+            }
         });
 
         ui.add_space(12.0);

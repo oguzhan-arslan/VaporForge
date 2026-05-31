@@ -32,3 +32,10 @@ pub fn grid_dir(steam_dir: &Path, user_id: u64) -> PathBuf {
         .join("config")
         .join("grid")
 }
+
+pub fn user_dir_exists(steam_dir: &Path, user_id: u64) -> bool {
+    steam_dir
+        .join("userdata")
+        .join(user_id.to_string())
+        .is_dir()
+}
