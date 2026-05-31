@@ -7,7 +7,6 @@ A Windows desktop app for managing your Steam library — add non-Steam games, b
 - **Non-Steam Games** — scan install directories, add detected games as Steam shortcuts, edit names/paths/launch options, remove entries
 - **Artwork Manager** — browse SteamGridDB covers, wide covers, backgrounds, logos and icons; click to apply directly to Steam's grid directory; works for both non-Steam shortcuts and installed Steam games
 - **Auto-Artwork** — automatically fetches and applies artwork when you add new non-Steam games
-- **Live Log Bar** — single-line status bar at the bottom shows the last logged action across the whole app
 
 ## Requirements
 
@@ -32,14 +31,14 @@ Download the latest `vaporforge-windows-x86_64.zip` from the [Releases](../../re
 
 Config is stored at `%APPDATA%\VaporForge\config.toml` and created with defaults on first run. You can edit it directly or use the Settings tab.
 
-| Key | Default | Description |
-|---|---|---|
-| `steam.user_id` | *(auto)* | Override the detected Steam user ID |
-| `scanner.scan_dirs` | `[]` | Directories to scan for games |
-| `scanner.blocklist` | common redist folders | Folder names to skip during scan |
-| `steamgriddb.api_key` | *(required)* | Your SteamGridDB API key |
-| `steamgriddb.auto_artwork` | `true` | Fetch artwork automatically on game add |
-| `steamgriddb.page_size` | `25` | Images per page in Artwork Manager (10–50) |
+| Key                        | Default               | Description                                |
+| -------------------------- | --------------------- | ------------------------------------------ |
+| `steam.user_id`            | _(auto)_              | Override the detected Steam user ID        |
+| `scanner.scan_dirs`        | `[]`                  | Directories to scan for games              |
+| `scanner.blocklist`        | common redist folders | Folder names to skip during scan           |
+| `steamgriddb.api_key`      | _(required)_          | Your SteamGridDB API key                   |
+| `steamgriddb.auto_artwork` | `true`                | Fetch artwork automatically on game add    |
+| `steamgriddb.page_size`    | `25`                  | Images per page in Artwork Manager (10–50) |
 
 ## Building from Source
 

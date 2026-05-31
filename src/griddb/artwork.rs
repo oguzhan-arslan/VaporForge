@@ -18,6 +18,34 @@ pub fn artwork_filename(appid: u32, kind: ImageKind, url: &str) -> String {
     format!("{}{}.{}", appid, kind.filename_suffix(), ext)
 }
 
+/// Removes any existing artwork files for `appid`+`kind` that differ from `keep`.
+fn remove_stale_artwork(appid: u32, kind: ImageKind, grid_dir: &Path, keep: &Path) {
+    let stem = format!("{}{}", appid, kind.filename_suffix());
+    let entries = match std::fs::read_dir(grid_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == keep {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_owned(),
+            None => continue,
+        };
+        // Match files whose stem is exactly `{appid}{suffix}` and extension is a known image type.
+        if let Some(dot) = name.rfind('.') {
+            let file_stem = &name[..dot];
+            let ext = name[dot + 1..].to_lowercase();
+            if file_stem == stem && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp") {
+                let _ = std::fs::remove_file(&path);
+                tracing::info!("removed stale artwork: {}", path.display());
+            }
+        }
+    }
+}
+
 /// Downloads `url` and writes the artwork to `grid_dir` using the correct filename.
 ///
 /// Creates `grid_dir` if it does not exist.
@@ -32,6 +60,7 @@ pub async fn apply_artwork(
 
     let bytes = reqwest::get(url).await?.bytes().await?;
     std::fs::create_dir_all(grid_dir)?;
+    remove_stale_artwork(appid, kind, grid_dir, &dest);
     std::fs::write(&dest, &bytes)?;
 
     tracing::info!("artwork saved: {}", dest.display());
@@ -49,6 +78,7 @@ pub fn write_artwork_bytes(
     let filename = artwork_filename(appid, kind, url);
     let dest = grid_dir.join(&filename);
     std::fs::create_dir_all(grid_dir)?;
+    remove_stale_artwork(appid, kind, grid_dir, &dest);
     std::fs::write(&dest, bytes)?;
     Ok(dest)
 }
@@ -116,6 +146,23 @@ mod tests {
         assert!(dest.exists());
         assert_eq!(dest.file_name().unwrap(), "999_hero.png");
         assert_eq!(std::fs::read(&dest).unwrap(), b"fake image bytes");
+    }
+
+    #[test]
+    fn write_artwork_bytes_replaces_stale_extension() {
+        let tmp = tempdir().unwrap();
+        let grid_dir = tmp.path().join("grid");
+
+        // Write initial png
+        write_artwork_bytes(999, ImageKind::Background, "https://cdn.example.com/hero.png", &grid_dir, b"old").unwrap();
+        let old = grid_dir.join("999_hero.png");
+        assert!(old.exists());
+
+        // Replace with jpg — old png must be deleted
+        let new = write_artwork_bytes(999, ImageKind::Background, "https://cdn.example.com/hero.jpg", &grid_dir, b"new").unwrap();
+        assert!(!old.exists(), "stale .png should have been removed");
+        assert!(new.exists());
+        assert_eq!(std::fs::read(&new).unwrap(), b"new");
     }
 
     #[test]
