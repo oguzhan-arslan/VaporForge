@@ -372,54 +372,28 @@ impl NonSteamManagerView {
         }
 
         let mut click_game: Option<usize> = None;
-        let mut click_scan: Option<usize> = None;
         let mut do_scan = false;
-        let mut do_add = false;
-        let mut select_all = false;
-        let mut select_none = false;
 
+        // Leave room for the static bottom bar.
         let list_height = ui.available_height() - 52.0;
 
         ScrollArea::vertical()
             .max_height(list_height)
             .id_salt("nsm_list")
             .show(ui, |ui| {
-                for (i, sc) in self.shortcuts.iter().enumerate() {
-                    let sel = self.selected_idx == Some(i);
-                    let resp = ui.selectable_label(sel, &sc.app_name);
-                    if resp.clicked() && !sel {
-                        click_game = Some(i);
-                    }
-                }
-
-                if !self.scan_results.is_empty() {
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(4.0);
-
+                if self.shortcuts.is_empty() {
                     ui.label(
-                        RichText::new(format!("Detected ({}) — click to configure:", self.scan_results.len()))
-                            .size(11.5)
+                        RichText::new("No non-Steam games added yet.")
+                            .small()
                             .color(theme::TEXT_DIM),
                     );
-                    ui.horizontal(|ui| {
-                        if ui.small_button("Select all").clicked() { select_all = true; }
-                        if ui.small_button("Select none").clicked() { select_none = true; }
-                    });
-                    ui.add_space(2.0);
-
-                    for (i, result) in self.scan_results.iter_mut().enumerate() {
-                        let sel = self.selected_scan_idx == Some(i);
-                        ui.horizontal(|ui| {
-                            ui.checkbox(&mut result.include, "");
-                            let resp = ui.selectable_label(
-                                sel,
-                                RichText::new(&result.name).size(13.0),
-                            );
-                            if resp.clicked() {
-                                click_scan = Some(i);
-                            }
-                        });
+                } else {
+                    for (i, sc) in self.shortcuts.iter().enumerate() {
+                        let sel = self.selected_idx == Some(i);
+                        let resp = ui.selectable_label(sel, &sc.app_name);
+                        if resp.clicked() && !sel {
+                            click_game = Some(i);
+                        }
                     }
                 }
             });
@@ -433,32 +407,169 @@ impl NonSteamManagerView {
                 ui.label(RichText::new("Scanning…").color(theme::TEXT_DIM).size(13.0));
             });
         } else {
-            ui.horizontal(|ui| {
-                if ui.button("Scan for Games").clicked() { do_scan = true; }
-                if !self.scan_results.is_empty() {
-                    let add_btn = egui::Button::new(
-                        RichText::new("Add Selected").color(egui::Color32::WHITE),
-                    )
-                    .fill(theme::ACCENT)
-                    .stroke(egui::Stroke::new(1.0, theme::ACCENT_HOVER));
-                    if ui.add(add_btn).clicked() { do_add = true; }
-                }
-            });
+            if ui.button("Scan for Games").clicked() {
+                do_scan = true;
+            }
         }
 
         if self.artwork_applying {
+            ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.spinner();
                 ui.label(RichText::new("Applying artwork…").color(theme::TEXT_DIM).size(13.0));
             });
         }
 
+        if let Some(i) = click_game { self.select_game(i); }
+        if do_scan { self.trigger_scan(config); }
+    }
+
+    fn show_scan_panel(&mut self, ui: &mut Ui, config: &AppConfig) {
+        let mut do_add = false;
+        let mut dismiss = false;
+        let mut click_scan: Option<usize> = None;
+        let mut select_all = false;
+        let mut select_none = false;
+
+        // ── static bottom action bar ──────────────────────────────────────
+        egui::TopBottomPanel::bottom("scan_action_bar")
+            .frame(
+                egui::Frame::none()
+                    .fill(theme::SURFACE_0)
+                    .inner_margin(egui::Margin::symmetric(16.0, 10.0))
+                    .stroke(egui::Stroke::new(1.0, theme::BORDER)),
+            )
+            .min_height(48.0)
+            .show_separator_line(false)
+            .show_inside(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let count = self.scan_results.iter().filter(|r| r.include).count();
+                    let add_label = format!(
+                        "Add {} Game{}",
+                        count,
+                        if count == 1 { "" } else { "s" }
+                    );
+                    let add_btn = egui::Button::new(
+                        RichText::new(add_label).color(egui::Color32::WHITE),
+                    )
+                    .fill(theme::ACCENT)
+                    .stroke(egui::Stroke::new(1.0, theme::ACCENT_HOVER));
+                    if ui.add_enabled(!self.scanning && count > 0, add_btn).clicked() {
+                        do_add = true;
+                    }
+
+                    if ui.button("Dismiss").clicked() {
+                        dismiss = true;
+                    }
+
+                    if self.artwork_applying {
+                        ui.add_space(8.0);
+                        ui.add(egui::Separator::default().vertical().spacing(0.0));
+                        ui.add_space(8.0);
+                        ui.spinner();
+                        ui.label(
+                            RichText::new("Applying artwork…")
+                                .color(theme::TEXT_DIM)
+                                .size(13.0),
+                        );
+                    }
+                });
+            });
+
+        // ── scanning with no results yet: show full-area spinner ──────────
+        if self.scanning && self.scan_results.is_empty() {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::none())
+                .show_inside(ui, |ui| {
+                    ui.centered_and_justified(|ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.spinner();
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new("Scanning for new games…")
+                                    .color(theme::TEXT_DIM)
+                                    .size(14.0),
+                            );
+                        });
+                    });
+                });
+            if dismiss {
+                self.scanning = false;
+                self.scan_rx = None;
+            }
+            return;
+        }
+
+        // ── left sub-panel: found games list ──────────────────────────────
+        egui::SidePanel::left("scan_results_list")
+            .resizable(true)
+            .default_width(220.0)
+            .frame(
+                egui::Frame::none()
+                    .fill(theme::SURFACE_0)
+                    .inner_margin(Margin { left: 12.0, right: 12.0, top: 14.0, bottom: 10.0 }),
+            )
+            .show_inside(ui, |ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "{} game{} found",
+                        self.scan_results.len(),
+                        if self.scan_results.len() == 1 { "" } else { "s" }
+                    ))
+                    .size(13.0)
+                    .color(theme::TEXT_2),
+                );
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.small_button("Select all").clicked() { select_all = true; }
+                    if ui.small_button("Select none").clicked() { select_none = true; }
+                });
+                ui.add_space(6.0);
+
+                ScrollArea::vertical().id_salt("scan_result_list").show(ui, |ui| {
+                    for (i, result) in self.scan_results.iter_mut().enumerate() {
+                        let sel = self.selected_scan_idx == Some(i);
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut result.include, "");
+                            let resp = ui.selectable_label(
+                                sel,
+                                RichText::new(&result.name).size(13.0),
+                            );
+                            if resp.clicked() {
+                                click_scan = Some(i);
+                            }
+                        });
+                    }
+                });
+            });
+
+        // ── central area: per-game config editor ──────────────────────────
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::none()
+                    .fill(theme::SURFACE_1)
+                    .inner_margin(Margin { left: 20.0, right: 20.0, top: 16.0, bottom: 12.0 }),
+            )
+            .show_inside(ui, |ui| {
+                if let Some(idx) = self.selected_scan_idx {
+                    self.show_scan_result_editor(ui, idx);
+                } else {
+                    ui.centered_and_justified(|ui| {
+                        ui.label(
+                            RichText::new("Select a game from the list to configure it before adding")
+                                .color(theme::TEXT_DIM)
+                                .size(14.0),
+                        );
+                    });
+                }
+            });
+
+        // ── deferred actions ──────────────────────────────────────────────
         if select_all  { for r in &mut self.scan_results { r.include = true; } }
         if select_none { for r in &mut self.scan_results { r.include = false; } }
-        if let Some(i) = click_game  { self.select_game(i); }
-        if let Some(i) = click_scan  { self.select_scan_result(i); }
-        if do_scan { self.trigger_scan(config); }
-        if do_add  { self.add_selected(config); }
+        if let Some(i) = click_scan { self.select_scan_result(i); }
+        if do_add   { self.add_selected(config); }
+        if dismiss  { self.scan_results.clear(); self.selected_scan_idx = None; }
     }
 
     fn show_game_editor(&mut self, ui: &mut Ui, config: &AppConfig) {
@@ -603,14 +714,6 @@ impl NonSteamManagerView {
     fn show_scan_result_editor(&mut self, ui: &mut Ui, idx: usize) {
         let mut new_exe: Option<String> = None;
 
-        // Header
-        ui.label(
-            RichText::new("Configure before adding")
-                .size(13.0)
-                .color(theme::TEXT_2),
-        );
-        ui.add_space(6.0);
-
         ScrollArea::vertical().id_salt("nsm_scan_editor").show(ui, |ui| {
             theme::card().show(ui, |ui| {
                 theme::section_header(ui, "Game Name");
@@ -639,7 +742,7 @@ impl NonSteamManagerView {
                     );
                     let current_exe = self.scan_results[idx].exe.clone();
                     ScrollArea::vertical()
-                        .max_height(160.0)
+                        .max_height(280.0)
                         .id_salt("nsm_scan_exe_picker")
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
@@ -674,12 +777,6 @@ impl NonSteamManagerView {
                         .hint_text("Optional launch arguments"),
                 );
             });
-
-            ui.add_space(8.0);
-
-            theme::card().show(ui, |ui| {
-                ui.checkbox(&mut self.scan_results[idx].include, "Include when adding");
-            });
         });
 
         if let Some(exe) = new_exe {
@@ -712,13 +809,17 @@ impl View for NonSteamManagerView {
             });
 
         egui::CentralPanel::default()
-            .frame(
-                egui::Frame::none()
-                    .fill(theme::SURFACE_1)
-                    .inner_margin(Margin { left: 20.0, right: 20.0, top: 16.0, bottom: 12.0 }),
-            )
+            .frame(egui::Frame::none().fill(theme::SURFACE_1))
             .show_inside(ui, |ui| {
-                self.show_game_editor(ui, config);
+                if self.scanning || !self.scan_results.is_empty() {
+                    self.show_scan_panel(ui, config);
+                } else {
+                    egui::Frame::none()
+                        .inner_margin(Margin { left: 20.0, right: 20.0, top: 16.0, bottom: 12.0 })
+                        .show(ui, |ui| {
+                            self.show_game_editor(ui, config);
+                        });
+                }
             });
     }
 }
