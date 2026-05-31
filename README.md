@@ -66,3 +66,9 @@ git push origin v0.1.0
 ## License
 
 MIT
+
+---
+
+## Disclaimer
+
+This project was built for personal use and is provided as-is with no guarantees of correctness, stability, or fitness for any particular purpose. The entire codebase was written by AI (Claude by Anthropic) — take that for what it is.
