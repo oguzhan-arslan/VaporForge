@@ -8,6 +8,9 @@ pub struct AppConfig {
     pub steam: SteamConfig,
     pub scanner: ScannerConfig,
     pub steamgriddb: SteamGridDbConfig,
+    /// Set to true by NonSteamManager after writing shortcuts; cleared by ArtworkPickerView.
+    #[serde(skip, default)]
+    pub shortcuts_changed: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

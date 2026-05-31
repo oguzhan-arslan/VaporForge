@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::griddb::client::ImageKind;
 
@@ -19,34 +20,33 @@ pub fn artwork_filename(appid: u32, kind: ImageKind, url: &str) -> String {
 }
 
 /// Removes any existing artwork files for `appid`+`kind` that differ from `keep`.
-fn remove_stale_artwork(appid: u32, kind: ImageKind, grid_dir: &Path, keep: &Path) {
+/// Returns true if any file was removed.
+fn remove_stale_artwork(appid: u32, kind: ImageKind, grid_dir: &Path) -> bool {
     let stem = format!("{}{}", appid, kind.filename_suffix());
     let entries = match std::fs::read_dir(grid_dir) {
         Ok(e) => e,
-        Err(_) => return,
+        Err(_) => return false,
     };
+    let mut removed = false;
     for entry in entries.flatten() {
         let path = entry.path();
-        if path == keep {
-            continue;
-        }
         let name = match path.file_name().and_then(|n| n.to_str()) {
             Some(n) => n.to_owned(),
             None => continue,
         };
-        // Match files whose stem is exactly `{appid}{suffix}` and extension is a known image type.
         if let Some(dot) = name.rfind('.') {
             let file_stem = &name[..dot];
             let ext = name[dot + 1..].to_lowercase();
             if file_stem == stem && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp") {
                 let _ = std::fs::remove_file(&path);
                 tracing::info!("removed stale artwork: {}", path.display());
+                removed = true;
             }
         }
     }
+    removed
 }
 
-/// Downloads `url` and writes the artwork to `grid_dir` using the correct filename.
 ///
 /// Creates `grid_dir` if it does not exist.
 pub async fn apply_artwork(
@@ -60,7 +60,9 @@ pub async fn apply_artwork(
 
     let bytes = reqwest::get(url).await?.bytes().await?;
     std::fs::create_dir_all(grid_dir)?;
-    remove_stale_artwork(appid, kind, grid_dir, &dest);
+    if remove_stale_artwork(appid, kind, grid_dir) {
+        // std::thread::sleep(Duration::from_secs(1));
+    }
     std::fs::write(&dest, &bytes)?;
 
     tracing::info!("artwork saved: {}", dest.display());
@@ -78,7 +80,9 @@ pub fn write_artwork_bytes(
     let filename = artwork_filename(appid, kind, url);
     let dest = grid_dir.join(&filename);
     std::fs::create_dir_all(grid_dir)?;
-    remove_stale_artwork(appid, kind, grid_dir, &dest);
+    if remove_stale_artwork(appid, kind, grid_dir) {
+        std::thread::sleep(Duration::from_secs(1));
+    }
     std::fs::write(&dest, bytes)?;
     Ok(dest)
 }
@@ -90,27 +94,62 @@ mod tests {
 
     #[test]
     fn filename_wide_cover() {
-        assert_eq!(artwork_filename(1234567890, ImageKind::WideCover, "https://cdn.example.com/img.png"), "1234567890.png");
+        assert_eq!(
+            artwork_filename(
+                1234567890,
+                ImageKind::WideCover,
+                "https://cdn.example.com/img.png"
+            ),
+            "1234567890.png"
+        );
     }
 
     #[test]
     fn filename_cover() {
-        assert_eq!(artwork_filename(1234567890, ImageKind::Cover, "https://cdn.example.com/img.jpg"), "1234567890p.jpg");
+        assert_eq!(
+            artwork_filename(
+                1234567890,
+                ImageKind::Cover,
+                "https://cdn.example.com/img.jpg"
+            ),
+            "1234567890p.jpg"
+        );
     }
 
     #[test]
     fn filename_background() {
-        assert_eq!(artwork_filename(1234567890, ImageKind::Background, "https://cdn.example.com/img.webp"), "1234567890_hero.webp");
+        assert_eq!(
+            artwork_filename(
+                1234567890,
+                ImageKind::Background,
+                "https://cdn.example.com/img.webp"
+            ),
+            "1234567890_hero.webp"
+        );
     }
 
     #[test]
     fn filename_logo() {
-        assert_eq!(artwork_filename(1234567890, ImageKind::Logo, "https://cdn.example.com/img.png"), "1234567890_logo.png");
+        assert_eq!(
+            artwork_filename(
+                1234567890,
+                ImageKind::Logo,
+                "https://cdn.example.com/img.png"
+            ),
+            "1234567890_logo.png"
+        );
     }
 
     #[test]
     fn filename_icon() {
-        assert_eq!(artwork_filename(1234567890, ImageKind::Icon, "https://cdn.example.com/img.png"), "1234567890_icon.png");
+        assert_eq!(
+            artwork_filename(
+                1234567890,
+                ImageKind::Icon,
+                "https://cdn.example.com/img.png"
+            ),
+            "1234567890_icon.png"
+        );
     }
 
     #[test]
@@ -121,12 +160,18 @@ mod tests {
 
     #[test]
     fn filename_unknown_ext_falls_back_to_png() {
-        assert_eq!(artwork_filename(1, ImageKind::Background, "https://cdn.example.com/img.bmp"), "1_hero.png");
+        assert_eq!(
+            artwork_filename(1, ImageKind::Background, "https://cdn.example.com/img.bmp"),
+            "1_hero.png"
+        );
     }
 
     #[test]
     fn filename_ext_is_lowercased() {
-        assert_eq!(artwork_filename(1, ImageKind::WideCover, "https://cdn.example.com/img.PNG"), "1.png");
+        assert_eq!(
+            artwork_filename(1, ImageKind::WideCover, "https://cdn.example.com/img.PNG"),
+            "1.png"
+        );
     }
 
     #[test]
@@ -154,12 +199,26 @@ mod tests {
         let grid_dir = tmp.path().join("grid");
 
         // Write initial png
-        write_artwork_bytes(999, ImageKind::Background, "https://cdn.example.com/hero.png", &grid_dir, b"old").unwrap();
+        write_artwork_bytes(
+            999,
+            ImageKind::Background,
+            "https://cdn.example.com/hero.png",
+            &grid_dir,
+            b"old",
+        )
+        .unwrap();
         let old = grid_dir.join("999_hero.png");
         assert!(old.exists());
 
         // Replace with jpg — old png must be deleted
-        let new = write_artwork_bytes(999, ImageKind::Background, "https://cdn.example.com/hero.jpg", &grid_dir, b"new").unwrap();
+        let new = write_artwork_bytes(
+            999,
+            ImageKind::Background,
+            "https://cdn.example.com/hero.jpg",
+            &grid_dir,
+            b"new",
+        )
+        .unwrap();
         assert!(!old.exists(), "stale .png should have been removed");
         assert!(new.exists());
         assert_eq!(std::fs::read(&new).unwrap(), b"new");

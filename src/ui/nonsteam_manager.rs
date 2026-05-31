@@ -220,7 +220,7 @@ impl NonSteamManagerView {
         });
     }
 
-    fn add_selected(&mut self, config: &AppConfig) {
+    fn add_selected(&mut self, config: &mut AppConfig) {
         let count = self.scan_results.iter().filter(|r| r.include).count();
         if count == 0 {
             tracing::warn!("No games selected to add.");
@@ -256,6 +256,7 @@ impl NonSteamManagerView {
             Ok(()) => {
                 self.scan_results.clear();
                 self.selected_scan_idx = None;
+                config.shortcuts_changed = true;
                 tracing::info!("{count} game(s) added to Steam shortcuts. Restart Steam to apply.");
                 if config.steamgriddb.auto_artwork {
                     self.trigger_artwork(config, new_games);
@@ -424,7 +425,7 @@ impl NonSteamManagerView {
         if do_scan { self.trigger_scan(config); }
     }
 
-    fn show_scan_panel(&mut self, ui: &mut Ui, config: &AppConfig) {
+    fn show_scan_panel(&mut self, ui: &mut Ui, config: &mut AppConfig) {
         let mut do_add = false;
         let mut dismiss = false;
         let mut click_scan: Option<usize> = None;
@@ -717,21 +718,31 @@ impl NonSteamManagerView {
         ScrollArea::vertical().id_salt("nsm_scan_editor").show(ui, |ui| {
             theme::card().show(ui, |ui| {
                 theme::section_header(ui, "Game Name");
-                ui.add(
+                let name_changed = ui.add(
                     egui::TextEdit::singleline(&mut self.scan_results[idx].name)
                         .desired_width(f32::INFINITY),
-                );
+                ).changed();
+                if name_changed {
+                    let exe = self.scan_results[idx].exe.clone();
+                    let name = self.scan_results[idx].name.clone();
+                    self.scan_results[idx].app_id = calculate_app_id(&exe, &name);
+                }
             });
 
             ui.add_space(8.0);
 
             theme::card().show(ui, |ui| {
                 theme::section_header(ui, "Executable");
-                ui.add(
+                let exe_changed = ui.add(
                     egui::TextEdit::singleline(&mut self.scan_results[idx].exe)
                         .desired_width(f32::INFINITY)
                         .hint_text("Path to .exe"),
-                );
+                ).changed();
+                if exe_changed {
+                    let exe = self.scan_results[idx].exe.clone();
+                    let name = self.scan_results[idx].name.clone();
+                    self.scan_results[idx].app_id = calculate_app_id(&exe, &name);
+                }
 
                 if !self.scan_exe_list.is_empty() {
                     ui.add_space(6.0);
@@ -780,7 +791,9 @@ impl NonSteamManagerView {
         });
 
         if let Some(exe) = new_exe {
-            self.scan_results[idx].exe = exe;
+            self.scan_results[idx].exe = exe.clone();
+            let name = self.scan_results[idx].name.clone();
+            self.scan_results[idx].app_id = calculate_app_id(&exe, &name);
         }
     }
 }

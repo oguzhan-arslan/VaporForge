@@ -14,10 +14,7 @@ static COVER_DIMS: [GridDimentions; 3] = [
     GridDimentions::D342x482,
     GridDimentions::D660x930,
 ];
-static WIDE_COVER_DIMS: [GridDimentions; 2] = [
-    GridDimentions::D460x215,
-    GridDimentions::D920x430,
-];
+static WIDE_COVER_DIMS: [GridDimentions; 2] = [GridDimentions::D460x215, GridDimentions::D920x430];
 
 static STATIC_ONLY: [AnimtionType; 1] = [AnimtionType::Static];
 
@@ -39,8 +36,16 @@ pub enum ImageKind {
 impl ImageKind {
     pub(crate) fn to_query_type<'a>(&self, opts: &'a GetImagesOptions) -> QueryType<'a> {
         let anim_types: &'a [AnimtionType] = &STATIC_ONLY;
-        let nsfw = if opts.show_nsfw { &Nsfw::Any } else { &Nsfw::False };
-        let humor = if opts.show_humor { &Humor::Any } else { &Humor::False };
+        let nsfw = if opts.show_nsfw {
+            &Nsfw::Any
+        } else {
+            &Nsfw::False
+        };
+        let humor = if opts.show_humor {
+            &Humor::Any
+        } else {
+            &Humor::False
+        };
 
         match self {
             ImageKind::Cover => QueryType::Grid(Some(GridQueryParameters {
@@ -146,6 +151,36 @@ impl GridDbClient {
             .map_err(|e| eyre::eyre!("{e}"))
     }
 
+    /// Look up a SteamGridDB game ID by Steam AppID.
+    /// Parses the raw JSON directly because the crate's GameInfo deserialization
+    /// fails when the response wraps data in {"success": ..., "data": {...}}.
+    pub async fn game_by_steam_appid(&self, steam_appid: u32) -> eyre::Result<Option<usize>> {
+        let url = format!(
+            "{}/games/steam/{}",
+            self.inner.base_url(),
+            steam_appid
+        );
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(self.inner.get_auth_key())
+            .send()
+            .await
+            .map_err(eyre::Report::from)?
+            .json::<serde_json::Value>()
+            .await
+            .map_err(eyre::Report::from)?;
+
+        // The API returns {"success": true, "data": {..}} or {"data": [{..}]}
+        let data = &resp["data"];
+        let sgdb_id = if let Some(arr) = data.as_array() {
+            arr.first().and_then(|item| item["id"].as_u64())
+        } else {
+            data["id"].as_u64()
+        };
+        Ok(sgdb_id.map(|id| id as usize))
+    }
+
     /// Fetch one page of images for a SteamGridDB game ID.
     pub async fn get_images(
         &self,
@@ -163,7 +198,8 @@ impl GridDbClient {
             opts.page,
         );
 
-        let resp = self.http
+        let resp = self
+            .http
             .get(&url)
             .bearer_auth(self.inner.get_auth_key())
             .send()
@@ -174,7 +210,8 @@ impl GridDbClient {
             .map_err(eyre::Report::from)?;
 
         if resp.success == Some(false) {
-            let msg = resp.errors
+            let msg = resp
+                .errors
                 .filter(|e| !e.is_empty())
                 .map(|e| e.join(", "))
                 .unwrap_or_else(|| "API request failed".to_string());
@@ -197,11 +234,26 @@ mod tests {
     #[test]
     fn image_kind_query_mapping() {
         let opts = default_opts();
-        assert!(matches!(ImageKind::Cover.to_query_type(&opts), QueryType::Grid(_)));
-        assert!(matches!(ImageKind::WideCover.to_query_type(&opts), QueryType::Grid(_)));
-        assert!(matches!(ImageKind::Background.to_query_type(&opts), QueryType::Hero(_)));
-        assert!(matches!(ImageKind::Logo.to_query_type(&opts), QueryType::Logo(_)));
-        assert!(matches!(ImageKind::Icon.to_query_type(&opts), QueryType::Icon(_)));
+        assert!(matches!(
+            ImageKind::Cover.to_query_type(&opts),
+            QueryType::Grid(_)
+        ));
+        assert!(matches!(
+            ImageKind::WideCover.to_query_type(&opts),
+            QueryType::Grid(_)
+        ));
+        assert!(matches!(
+            ImageKind::Background.to_query_type(&opts),
+            QueryType::Hero(_)
+        ));
+        assert!(matches!(
+            ImageKind::Logo.to_query_type(&opts),
+            QueryType::Logo(_)
+        ));
+        assert!(matches!(
+            ImageKind::Icon.to_query_type(&opts),
+            QueryType::Icon(_)
+        ));
     }
 
     #[test]
@@ -222,7 +274,9 @@ mod tests {
     fn wide_cover_uses_landscape_dimensions() {
         let opts = default_opts();
         if let QueryType::Grid(Some(params)) = ImageKind::WideCover.to_query_type(&opts) {
-            let dims = params.dimentions.expect("WideCover must have dimension filter");
+            let dims = params
+                .dimentions
+                .expect("WideCover must have dimension filter");
             assert!(dims
                 .iter()
                 .all(|d| matches!(d, GridDimentions::D460x215 | GridDimentions::D920x430)));
@@ -244,7 +298,7 @@ mod tests {
 
     #[test]
     fn show_animated_includes_animated_type() {
-        let opts = GetImagesOptions { show_animated: true, ..default_opts() };
+        let opts = GetImagesOptions { ..default_opts() };
         if let QueryType::Grid(Some(params)) = ImageKind::Cover.to_query_type(&opts) {
             let types = params.types.expect("should have types filter");
             assert!(types.contains(&AnimtionType::Animated));
