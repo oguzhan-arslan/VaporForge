@@ -1,5 +1,9 @@
 # VaporForge
 
+<p align="center">
+  <img src="icon.png" alt="VaporForge logo" width="128" />
+</p>
+
 A Windows desktop app for managing your Steam library — add non-Steam games, browse and apply artwork from SteamGridDB, and keep your shortcuts tidy.
 
 ## Features
