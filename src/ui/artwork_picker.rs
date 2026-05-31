@@ -6,7 +6,7 @@ use egui::{Align2, Margin, Rounding, ScrollArea, Stroke, Ui};
 use steam_shortcuts_util::shortcut::ShortcutOwned;
 
 use crate::config::AppConfig;
-use crate::griddb::artwork::write_artwork_bytes;
+use crate::griddb::artwork::{delete_all_artwork, delete_artwork, write_artwork_bytes};
 use crate::griddb::client::{GameResult, GetImagesOptions, GridDbClient, ImageKind, ImageResult};
 use crate::steam::library::{list_installed_games, SteamGame};
 use crate::steam::paths::{find_steam_dir, find_user_ids, grid_dir, shortcuts_path};
@@ -909,6 +909,8 @@ impl ArtworkPickerView {
         let mut load_prev = false;
         let mut load_next = false;
         let mut clicked_url: Option<String> = None;
+        let mut reset_kind = false;
+        let mut reset_all = false;
 
         // ── Bottom: pagination bar ────────────────────────────────────────
         egui::TopBottomPanel::bottom("picker_pagination_bar")
@@ -1084,7 +1086,7 @@ impl ArtworkPickerView {
                         ui.add_space(4.0);
                     }
 
-                    // Right-aligned status indicators
+                    // Right-aligned: reset buttons + status indicators
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.applying {
                             ui.label(
@@ -1107,6 +1109,32 @@ impl ArtworkPickerView {
                                         .color(theme::TEXT_DIM)
                                         .size(11.5),
                                 );
+                            }
+                        }
+
+                        // Reset buttons — only when a game is selected
+                        if self.selected_app_id.is_some() {
+                            ui.add_space(8.0);
+                            ui.add(egui::Separator::default().vertical().spacing(0.0));
+                            ui.add_space(4.0);
+
+                            let reset_all_btn = egui::Button::new(
+                                egui::RichText::new("Reset All").size(12.0).color(egui::Color32::from_rgb(220, 80, 80)),
+                            )
+                            .fill(theme::SURFACE_2)
+                            .stroke(Stroke::new(1.0, theme::BORDER));
+                            if ui.add(reset_all_btn).on_hover_text("Delete all artwork for this game").clicked() {
+                                reset_all = true;
+                            }
+
+                            let reset_kind_label = format!("Reset {}", kind_label(self.active_kind));
+                            let reset_kind_btn = egui::Button::new(
+                                egui::RichText::new(reset_kind_label).size(12.0).color(egui::Color32::from_rgb(220, 80, 80)),
+                            )
+                            .fill(theme::SURFACE_2)
+                            .stroke(Stroke::new(1.0, theme::BORDER));
+                            if ui.add(reset_kind_btn).on_hover_text("Delete this artwork type for this game").clicked() {
+                                reset_kind = true;
                             }
                         }
                     });
@@ -1138,6 +1166,37 @@ impl ArtworkPickerView {
             .show_inside(ui, |ui| {
                 self.show_gallery_area(ui, config, &mut clicked_url);
             });
+
+        // Handle reset artwork
+        if reset_kind || reset_all {
+            let appid = self.selected_app_id();
+            let gdir = find_steam_dir().and_then(|steam_dir| {
+                let uid = config.steam.user_id.parse::<u64>().ok()
+                    .or_else(|| find_user_ids(&steam_dir).into_iter().next())?;
+                Some(grid_dir(&steam_dir, uid))
+            });
+            if let Some(ref gdir) = gdir {
+                if reset_all {
+                    delete_all_artwork(appid, gdir);
+                    tracing::info!("All artwork reset for appid {appid}.");
+                    self.toast = Some(ToastNotification {
+                        message: "All artwork deleted.".to_string(),
+                        file_path: None,
+                        expires_at: Instant::now() + Duration::from_secs(4),
+                    });
+                } else {
+                    let removed = delete_artwork(appid, self.active_kind, gdir);
+                    if removed {
+                        tracing::info!("{} artwork reset for appid {appid}.", kind_label(self.active_kind));
+                        self.toast = Some(ToastNotification {
+                            message: format!("{} artwork deleted.", kind_label(self.active_kind)),
+                            file_path: None,
+                            expires_at: Instant::now() + Duration::from_secs(4),
+                        });
+                    }
+                }
+            }
+        }
 
         // Handle prev/next page navigation
         let nav_page: Option<usize> = if load_next {

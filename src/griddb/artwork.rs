@@ -47,6 +47,20 @@ fn remove_stale_artwork(appid: u32, kind: ImageKind, grid_dir: &Path) -> bool {
     removed
 }
 
+/// Deletes all artwork files for `appid`+`kind` from `grid_dir`.
+/// Returns true if any file was removed.
+pub fn delete_artwork(appid: u32, kind: ImageKind, grid_dir: &Path) -> bool {
+    remove_stale_artwork(appid, kind, grid_dir)
+}
+
+/// Deletes artwork for all known kinds for `appid` from `grid_dir`.
+pub fn delete_all_artwork(appid: u32, grid_dir: &Path) {
+    use crate::griddb::client::ImageKind as K;
+    for kind in [K::Cover, K::WideCover, K::Background, K::Logo, K::Icon] {
+        remove_stale_artwork(appid, kind, grid_dir);
+    }
+}
+
 ///
 /// Creates `grid_dir` if it does not exist.
 pub async fn apply_artwork(
